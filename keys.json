@@ -1,0 +1,6 @@
+{
+  "layout:traveler": {
+    "cmd-shift-j": { "command": "layout.toggle", "args": { "id": "panel" } },
+    "cmd-shift-u": { "command": "layout.select", "args": { "stack": "panel-body", "child": "claude-status" } }
+  }
+}

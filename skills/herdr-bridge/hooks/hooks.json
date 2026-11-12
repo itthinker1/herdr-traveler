@@ -1,0 +1,4 @@
+{
+  "description": "Herdr status bridge hooks module",
+  "modules": ["./register.js"]
+}

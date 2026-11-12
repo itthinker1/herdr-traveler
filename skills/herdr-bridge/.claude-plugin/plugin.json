@@ -1,0 +1,7 @@
+{
+  "name": "herdr-bridge",
+  "version": "0.1.0",
+  "defaultEnabled": true,
+  "description": "Publishes Claude Code MCP, task and version state for the Herdr claude-status panel.",
+  "author": { "name": "home" }
+}
