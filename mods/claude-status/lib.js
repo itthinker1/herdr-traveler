@@ -91,3 +91,27 @@ export function taskSubject(task) {
   if (task && typeof task.subject === "string") return task.subject;
   return "";
 }
+
+// The bridge's `agents` block, or nothing when the snapshot has none.
+export function countAgents(agents) {
+  const items = Array.isArray(agents?.items) ? agents.items : [];
+  return {
+    running: items.filter((agent) => agent?.status === "running").length,
+    total: items.length,
+  };
+}
+
+export function agentLabel(agent) {
+  if (agent && typeof agent.name === "string" && agent.name !== "") return agent.name;
+  if (agent && typeof agent.description === "string") return agent.description;
+  return "";
+}
+
+// AgentStatus -> the same three shapes tasks use, plus "waiting".
+export function agentState(agent) {
+  const status = agent?.status;
+  if (status === "running") return "working";
+  if (status === "completed") return "done";
+  if (status === "failed" || status === "killed") return "failed";
+  return "waiting";
+}

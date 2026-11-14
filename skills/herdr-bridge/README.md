@@ -48,9 +48,18 @@ Shape:
   "tasks": {
     "items": [{ "id": "1", "subject": "…", "status": "in_progress", "blockedBy": [] }],
     "counts": { "pending": 0, "in_progress": 1, "completed": 0, "total": 1 }
+  },
+  "agents": {
+    "items": [{ "id": "…", "name": null, "description": "…", "type": "general-purpose", "status": "running" }],
+    "counts": { "running": 1, "total": 1 }
   }
 }
 ```
+
+`agents` comes from `$.agent.list()`: this session's subagents and teammates,
+with the fields the panel draws (id, name, description, type, status) and
+nothing else — no prompt, no transcript. A build or a session without the call
+publishes an empty list, and a call that fails adds `error` with the reason.
 
 No MCP credentials, environment variables, prompts or transcript content are
 written.

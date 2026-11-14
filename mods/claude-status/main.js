@@ -16,7 +16,10 @@ import {
 } from "herdr";
 import * as fs from "fs/promises";
 import {
+  agentLabel,
+  agentState,
   ago,
+  countAgents,
   countMcp,
   countTasks,
   findNode,
@@ -438,6 +441,14 @@ export default class ClaudeStatus extends View {
     }
 
     const sections = [];
+    const blocks = [];
+
+    // A divider between the TASKS / SUBAGENTS / MCP / SESSION blocks.
+    const divider = () => div().h(1).bg(t.border);
+    const add = (el) => {
+      if (blocks.length > 0) blocks.push(divider());
+      blocks.push(el);
+    };
 
     if (data.kind === "fallback") {
       sections.push(
@@ -462,17 +473,16 @@ export default class ClaudeStatus extends View {
       );
     }
 
-    sections.push(this.sessionSection(t, now, data));
-
-    // A divider between the SESSION / MCP / TASKS blocks.
-    const divider = () => div().h(1).bg(t.border);
-
-    sections.push(divider());
+    // Nothing to list: the block goes away entirely, title included.
+    if (countTasks(data.tasks).total > 0) add(this.tasksSection(t, data.tasks));
+    if (countAgents(data.agents).total > 0) {
+      add(this.subagentsSection(t, data.agents));
+    }
 
     if (data.mcp) {
-      sections.push(this.mcpSection(t, data.mcp));
+      add(this.mcpSection(t, data.mcp));
     } else {
-      sections.push(
+      add(
         this.section(
           t,
           "MCP",
@@ -487,11 +497,9 @@ export default class ClaudeStatus extends View {
       );
     }
 
-    sections.push(divider());
+    add(this.sessionSection(t, now, data));
 
-    sections.push(this.tasksSection(t, data.tasks));
-
-    return sections;
+    return [...sections, ...blocks];
   }
 
   sessionSection(t, now, data) {
@@ -656,6 +664,87 @@ export default class ClaudeStatus extends View {
     }
 
     return this.section(t, "TASKS", `${counts.done}/${counts.total} done`, rows);
+  }
+
+  subagentsSection(t, agents) {
+    const counts = countAgents(agents);
+    const items = Array.isArray(agents?.items) ? agents.items : [];
+    const rows = [];
+
+    for (const agent of items) {
+      const state = agentState(agent);
+      const icon =
+        state === "working"
+          ? svg("mods/workspace-chrome/spinner.svg")
+              .size(12)
+              .flex_none()
+              .text_color(t.working)
+              .spin(900)
+          : state === "done"
+            ? div()
+                .size(14)
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(11)
+                .text_color(t.done)
+                .child("✓")
+            : state === "failed"
+              ? div()
+                  .size(14)
+                  .flex_none()
+                  .flex()
+                  .items_center()
+                  .justify_center()
+                  .text_size(11)
+                  .text_color(t.blocked)
+                  .child("✗")
+              : div()
+                  .size(7)
+                  .flex_none()
+                  .rounded(4)
+                  .border(1.5)
+                  .border_color(t.dim);
+
+      rows.push(
+        h_flex()
+          .h(28)
+          .flex_none()
+          .px(2)
+          .gap(8)
+          .items_center()
+          .child(icon)
+          .child(
+            div()
+              .flex_1()
+              .min_w(0)
+              .truncate()
+              .text_size(12)
+              .text_color(
+                state === "done" ? t.dim : state === "working" ? t.foreground : t.muted,
+              )
+              .child(agentLabel(agent)),
+          )
+          .when(Boolean(agent.type), (el) => el.child(this.chip(agent.type, t)))
+          .child(
+            div()
+              .flex_none()
+              .text_size(10.5)
+              .text_color(state === "failed" ? t.blocked : t.dim)
+              .child(agent.status),
+          ),
+      );
+    }
+
+    const right =
+      counts.total === 0
+        ? ""
+        : counts.running > 0
+          ? `${counts.running} running`
+          : `${counts.total} agents`;
+
+    return this.section(t, "SUBAGENTS", right, rows);
   }
 
   section(t, title, right, children) {

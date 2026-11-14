@@ -9,6 +9,7 @@
 
 import {
   inferMcpServers,
+  normalizeAgents,
   parseSession,
   parseTaskEntries,
   stableKey,
@@ -226,6 +227,18 @@ async function collect($, force) {
 
   const tasks = await readTasks($);
 
+  // Subagents and teammates of this session. A build without the call, or one
+  // that refuses it, leaves the panel's SUBAGENTS block empty; the reason is
+  // published alongside so a silent empty block can be told from a real one.
+  let agents = null;
+  let agentsError = null;
+  try {
+    agents = await $.agent.list();
+  } catch (e) {
+    agents = null;
+    agentsError = String(e?.message ?? e);
+  }
+
   return {
     schema: 1,
     pid: state.pid,
@@ -243,6 +256,10 @@ async function collect($, force) {
     endReason: null,
     mcp,
     tasks,
+    agents: {
+      ...normalizeAgents(agents),
+      ...(agentsError ? { error: agentsError } : {}),
+    },
   };
 }
 
@@ -334,6 +351,16 @@ export function register(on) {
           state.lastTodo = null;
         }
       }
+      await publish($, false);
+    } catch {}
+    return result;
+  }).catch(async ($, e, next) => next(e));
+
+  // A subagent appears in $.agent.list() as soon as the call starts; publish
+  // then instead of waiting for the next five-second tick.
+  on("tool.call", { tool: "Agent" }, async ($, e, next) => {
+    const result = await next(e);
+    try {
       await publish($, false);
     } catch {}
     return result;

@@ -1,6 +1,7 @@
 import { expect, test } from "claude-code/testing";
 import {
   inferMcpServers,
+  normalizeAgents,
   parseSnapshot,
   parseTaskEntries,
   sanitizeServer,
@@ -122,4 +123,51 @@ test("parseSnapshot validates schema and pid", () => {
   expect(parseSnapshot('{"pid":7}')).toBeNull();
   expect(parseSnapshot('{"schema":1,"pid":"7"}')).toBeNull();
   expect(parseSnapshot("not json")).toBeNull();
+});
+
+test("normalizeAgents keeps only the fields the panel draws", () => {
+  const result = normalizeAgents([
+    {
+      id: "a1",
+      name: "scout",
+      description: "look around",
+      type: "Explore",
+      status: "running",
+      parentId: "main",
+      spawnedBy: "plugin",
+    },
+    { id: "", description: "no id" },
+    { id: "a2", description: "bad status", status: 42 },
+    null,
+  ]);
+  expect(result.items).toHaveLength(2);
+  expect(result.items[0]).toEqual({
+    id: "a1",
+    name: "scout",
+    description: "look around",
+    type: "Explore",
+    status: "running",
+  });
+  expect(result.items[1]).toMatchObject({ id: "a2", name: null, type: "", status: "pending" });
+});
+
+test("normalizeAgents puts live agents first and counts running", () => {
+  const result = normalizeAgents([
+    { id: "c", description: "finished", type: "Explore", status: "completed" },
+    { id: "b", description: "waiting", type: "Explore", status: "idle" },
+    { id: "a", description: "working", type: "Explore", status: "running" },
+  ]);
+  expect(result.items.map((i) => i.id)).toEqual(["a", "b", "c"]);
+  expect(result.counts).toEqual({ running: 1, total: 3 });
+});
+
+test("normalizeAgents handles a missing agent list", () => {
+  expect(normalizeAgents(null)).toEqual({
+    items: [],
+    counts: { running: 0, total: 0 },
+  });
+  expect(normalizeAgents([])).toEqual({
+    items: [],
+    counts: { running: 0, total: 0 },
+  });
 });

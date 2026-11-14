@@ -1,7 +1,7 @@
 {
   "name": "herdr-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "defaultEnabled": true,
-  "description": "Publishes Claude Code MCP, task and version state for the Herdr claude-status panel.",
+  "description": "Publishes Claude Code MCP, task, subagent and version state for the Herdr claude-status panel.",
   "author": { "name": "home" }
 }

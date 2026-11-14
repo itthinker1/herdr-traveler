@@ -156,3 +156,49 @@ export function stableKey(snapshot) {
   if (copy.mcp) delete copy.mcp.checkedAt;
   return JSON.stringify(copy);
 }
+
+// Live agents first, then the ones between turns, then anything ended.
+const AGENT_RANK = {
+  running: 0,
+  pending: 1,
+  waiting: 1,
+  idle: 2,
+  completed: 3,
+  failed: 3,
+  killed: 3,
+};
+
+// agents: AgentInfo[] from $.agent.list(), or null when unavailable. Only the
+// fields the panel draws are published; a prompt and a transcript never are.
+export function normalizeAgents(agents) {
+  if (!Array.isArray(agents)) {
+    return { items: [], counts: { running: 0, total: 0 } };
+  }
+
+  const items = [];
+  for (const entry of agents) {
+    if (!entry || typeof entry !== "object") continue;
+    if (typeof entry.id !== "string" || entry.id === "") continue;
+    items.push({
+      id: entry.id,
+      name: typeof entry.name === "string" && entry.name !== "" ? entry.name : null,
+      description: typeof entry.description === "string" ? entry.description : "",
+      type: typeof entry.type === "string" ? entry.type : "",
+      status: typeof entry.status === "string" ? entry.status : "pending",
+    });
+  }
+
+  items.sort((a, b) => {
+    const rank = (AGENT_RANK[a.status] ?? 3) - (AGENT_RANK[b.status] ?? 3);
+    if (rank !== 0) return rank;
+    return (a.name ?? a.description).localeCompare(b.name ?? b.description);
+  });
+
+  return {
+    items,
+    counts: {
+      running: items.filter((agent) => agent.status === "running").length,
+      total: items.length,
+    },
+  };
+}
