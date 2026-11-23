@@ -1,6 +1,7 @@
 import { expect, test } from "claude-code/testing";
 import {
   inferMcpServers,
+  mergeTaskLists,
   normalizeAgents,
   parseSnapshot,
   parseTaskEntries,
@@ -170,4 +171,70 @@ test("normalizeAgents handles a missing agent list", () => {
     items: [],
     counts: { running: 0, total: 0 },
   });
+});
+
+test("a completed task stays published after its file is deleted", () => {
+  const previous = {
+    items: [
+      { id: "1", subject: "one", status: "completed" },
+      { id: "2", subject: "two", status: "completed" },
+    ],
+    counts: { pending: 0, in_progress: 0, completed: 2, total: 2 },
+  };
+  const result = mergeTaskLists(previous, {
+    items: [],
+    counts: { pending: 0, in_progress: 0, completed: 0, total: 0 },
+  });
+  expect(result.items.map((i) => [i.id, i.status])).toEqual([
+    ["1", "completed"],
+    ["2", "completed"],
+  ]);
+  expect(result.counts).toEqual({ pending: 0, in_progress: 0, completed: 2, total: 2 });
+});
+
+test("a task deleted before it finished is dropped", () => {
+  const previous = {
+    items: [
+      { id: "1", subject: "done", status: "completed" },
+      { id: "2", subject: "dropped", status: "pending" },
+      { id: "3", subject: "stopped", status: "in_progress" },
+    ],
+    counts: { pending: 1, in_progress: 1, completed: 1, total: 3 },
+  };
+  const result = mergeTaskLists(previous, {
+    items: [],
+    counts: { pending: 0, in_progress: 0, completed: 0, total: 0 },
+  });
+  expect(result.items.map((i) => i.id)).toEqual(["1"]);
+});
+
+test("on-disk tasks win over the remembered copy", () => {
+  const previous = {
+    items: [{ id: "1", subject: "old", status: "completed" }],
+    counts: { pending: 0, in_progress: 0, completed: 1, total: 1 },
+  };
+  const current = {
+    items: [{ id: "1", subject: "renamed", status: "in_progress" }],
+    counts: { pending: 0, in_progress: 1, completed: 0, total: 1 },
+  };
+  const result = mergeTaskLists(previous, current);
+  expect(result.items).toEqual([
+    { id: "1", subject: "renamed", status: "in_progress" },
+  ]);
+  expect(result.counts).toEqual({ pending: 0, in_progress: 1, completed: 0, total: 1 });
+});
+
+test("mergeTaskLists starts empty and sorts numerically", () => {
+  expect(mergeTaskLists(null, null)).toEqual({
+    items: [],
+    counts: { pending: 0, in_progress: 0, completed: 0, total: 0 },
+  });
+  const result = mergeTaskLists(null, {
+    items: [
+      { id: "10", subject: "ten", status: "pending" },
+      { id: "2", subject: "two", status: "pending" },
+    ],
+    counts: { pending: 2, in_progress: 0, completed: 0, total: 2 },
+  });
+  expect(result.items.map((i) => i.id)).toEqual(["2", "10"]);
 });

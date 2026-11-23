@@ -61,6 +61,12 @@ with the fields the panel draws (id, name, description, type, status) and
 nothing else — no prompt, no transcript. A build or a session without the call
 publishes an empty list, and a call that fails adds `error` with the reason.
 
+Claude Code deletes a task's file from `~/.claude/tasks/<sessionId>/` once the
+task is completed. The bridge remembers the tasks it has published and keeps
+the completed ones in the snapshot, so the panel's TASKS block does not vanish
+when work finishes. A task that disappears while still `pending` or
+`in_progress` was deleted on purpose and is dropped.
+
 No MCP credentials, environment variables, prompts or transcript content are
 written.
 

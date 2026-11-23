@@ -9,6 +9,7 @@
 
 import {
   inferMcpServers,
+  mergeTaskLists,
   normalizeAgents,
   parseSession,
   parseTaskEntries,
@@ -46,6 +47,7 @@ function freshState() {
     sourcesAt: 0,
     lastTools: [],
     lastTodo: null,
+    tasks: null,
     lastKey: "",
     lastWrite: 0,
     busy: false,
@@ -177,11 +179,16 @@ async function readTasks($) {
     // No task directory: fall through to the TodoWrite fallback.
   }
 
+  let current;
   if (entries.length === 0 && state.lastTodo) {
     const converted = todosToTasks(state.lastTodo);
-    if (converted) return converted;
+    if (converted) current = converted;
   }
-  return parseTaskEntries(entries);
+  if (!current) current = parseTaskEntries(entries);
+
+  // A completed task's file is deleted, so keep the ones already published.
+  state.tasks = mergeTaskLists(state.tasks, current);
+  return state.tasks;
 }
 
 async function collect($, force) {
@@ -190,7 +197,12 @@ async function collect($, force) {
 
   if (force) {
     const sid = await $.session.id().catch(() => "");
-    if (sid) state.sessionId = sid;
+    if (sid) {
+      // A different session starts with its own tasks; don't carry the old
+      // session's completed ones over.
+      if (sid !== state.sessionId) state.tasks = null;
+      state.sessionId = sid;
+    }
     const cwd = await $.session.cwd().catch(() => "");
     if (cwd && cwd !== state.cwd) {
       state.cwd = cwd;

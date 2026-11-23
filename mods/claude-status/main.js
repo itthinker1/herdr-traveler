@@ -2,6 +2,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import {
   agents,
+  appHome,
   exec,
   focused,
   hc,
@@ -9,8 +10,10 @@ import {
   layout,
   panes,
   readTextFile,
+  run,
   setShared,
   shared,
+  terminals,
   theme,
   watchFolder,
 } from "herdr";
@@ -19,12 +22,17 @@ import {
   agentLabel,
   agentState,
   ago,
+  childName,
+  childStatus,
   countAgents,
   countMcp,
   countTasks,
   findNode,
+  modelCachePath,
+  parseModelCache,
   parseSession,
   parseSnapshot,
+  remoteModelCachePath,
   shortId,
   shortPath,
   taskState,
@@ -63,6 +71,12 @@ export default class ClaudeStatus extends View {
     this.targetIsClaude = false;
     this.visibleFlag = null;
 
+    // The statusline cache the left-hand agent cards read too, so both panels
+    // show the same model name.
+    this.appHome = appHome();
+    this.models = {};
+    this.modelsLoading = false;
+
     // The traveler layout's tab bar only draws Files/Changes buttons when
     // workspace.panels lists them. Seed the default once; after that the
     // person's own choice is left alone.
@@ -79,7 +93,9 @@ export default class ClaudeStatus extends View {
     cx.timer.every(RECONCILE_MS, (cx) => this.reconcile(cx));
     cx.timer.every(REFRESH_MS, (cx) => {
       this.countBridge(cx);
-      if (this.isVisible()) cx.notify();
+      if (!this.isVisible()) return;
+      this.loadModels(cx);
+      cx.notify();
     });
   }
 
@@ -158,7 +174,10 @@ export default class ClaudeStatus extends View {
     if (visible !== this.visibleFlag) {
       this.visibleFlag = visible;
       // Just shown: force a fresh read below instead of serving stale data.
-      if (visible) this.loadedAt = 0;
+      if (visible) {
+        this.loadedAt = 0;
+        this.loadModels(cx);
+      }
     }
     if (!visible) return;
 
@@ -167,6 +186,10 @@ export default class ClaudeStatus extends View {
     // showing the previous terminal while its data loads.
     if (changed) cx.notify();
     if (!this.targetAddr) return;
+
+    // The focused terminal's model comes from its cache file; read it as soon
+    // as the target moves instead of waiting for the next refresh tick.
+    if (changed) this.loadModels(cx);
 
     // Reload only when the last check is old. A non-Claude focus leaves `data`
     // null, so "data === null" alone would retry `hc get` every tick.
@@ -208,6 +231,59 @@ export default class ClaudeStatus extends View {
         this.bridgeCount = count;
         cx.notify();
       }
+    });
+  }
+
+  // Where one terminal's statusline cache lives: here, or on its own machine.
+  cacheTargetFor(address) {
+    const local = modelCachePath(this.appHome, address);
+    if (local) return { path: local, on: null };
+    const remote = remoteModelCachePath(address);
+    return remote ? { path: remote.path, on: remote.on } : null;
+  }
+
+  // Live child terminals of the focused one: the sub-agents it started with
+  // `hc run`, whether or not they report a status of their own.
+  childTerminals() {
+    const addr = this.targetAddr;
+    if (!addr) return [];
+    return terminals().filter((t) => t?.parent === addr && t?.state === "live");
+  }
+
+  // Reads the statusline caches of the agents and sub-agents on screen, so the
+  // panel shows the same model name as the left-hand cards.
+  loadModels(cx) {
+    if (this.modelsLoading) return;
+
+    const addresses = new Set(agents().map((a) => a.address));
+    for (const t of this.childTerminals()) addresses.add(t.address);
+
+    const wanted = [];
+    for (const address of addresses) {
+      const target = this.cacheTargetFor(address);
+      if (target) wanted.push({ address, ...target });
+    }
+    if (wanted.length === 0) return;
+
+    this.modelsLoading = true;
+    cx.spawn(async (cx) => {
+      const next = { ...this.models };
+      let changed = false;
+      for (const w of wanted) {
+        const text = await readTextFile(w.path, w.on ? { on: w.on } : undefined).catch(
+          () => null,
+        );
+        const cache = parseModelCache(text);
+        if (cache === null) continue;
+        const prev = next[w.address];
+        if (!prev || prev.model !== cache.model || prev.effort !== cache.effort) {
+          next[w.address] = cache;
+          changed = true;
+        }
+      }
+      this.models = next;
+      this.modelsLoading = false;
+      if (changed) cx.notify();
     });
   }
 
@@ -475,6 +551,7 @@ export default class ClaudeStatus extends View {
 
     // Nothing to list: the block goes away entirely, title included.
     if (countTasks(data.tasks).total > 0) add(this.tasksSection(t, data.tasks));
+    if (this.childTerminals().length > 0) add(this.agentsSection(t));
     if (countAgents(data.agents).total > 0) {
       add(this.subagentsSection(t, data.agents));
     }
@@ -504,7 +581,10 @@ export default class ClaudeStatus extends View {
 
   sessionSection(t, now, data) {
     const rows = [];
-    if (data.model) rows.push(this.infoRow(t, "Model", data.model));
+    // Prefer the statusline cache: it is what the left-hand agent cards show,
+    // so the two panels agree on the model name.
+    const model = this.models[this.targetAddr]?.model ?? data.model;
+    if (model) rows.push(this.infoRow(t, "Model", model));
     if (data.sessionId) rows.push(this.infoRow(t, "Session", shortId(data.sessionId)));
     if (data.cwd) rows.push(this.infoRow(t, "Folder", shortPath(data.cwd, this.home)));
     if (this.targetBranch) rows.push(this.infoRow(t, "Branch", this.targetBranch));
@@ -646,6 +726,7 @@ export default class ClaudeStatus extends View {
                 .text_color(
                   state === "done" ? t.dim : state === "working" ? t.foreground : t.muted,
                 )
+                .when(state === "done", (el) => el.line_through())
                 .child(taskSubject(task)),
             )
             .when(
@@ -664,6 +745,75 @@ export default class ClaudeStatus extends View {
     }
 
     return this.section(t, "TASKS", `${counts.done}/${counts.total} done`, rows);
+  }
+
+  // Sub-agent terminals of the focused one: both the ones that report a status
+  // (they are also in agents()) and plain `hc run` terminals. The model comes
+  // from the same statusline cache the left-hand cards read.
+  agentsSection(t) {
+    const kids = this.childTerminals();
+    const listed = new Map(agents().map((a) => [a.address, a]));
+    const shown = new Set(panes().map((p) => p.terminal).filter(Boolean));
+
+    const rows = kids.map((kid) => {
+      const agent = listed.get(kid.address) ?? null;
+      const state = childStatus(agent, kid);
+      const icon =
+        state === "working"
+          ? svg("mods/workspace-chrome/spinner.svg")
+              .size(12)
+              .flex_none()
+              .text_color(t.working)
+              .spin(900)
+          : state === "blocked"
+            ? div()
+                .size(14)
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(11)
+                .text_color(t.blocked)
+                .child("!")
+            : div()
+                .size(7)
+                .flex_none()
+                .rounded(4)
+                .border(1.5)
+                .border_color(t.idle ?? t.dim);
+
+      const model = this.models[kid.address]?.model ?? null;
+      return h_flex()
+        .id(`claude-sub-${kid.address}`)
+        .h(28)
+        .flex_none()
+        .px(2)
+        .gap(8)
+        .items_center()
+        .rounded(5)
+        .hover((s) => s.bg(t.hover))
+        .on_click(() =>
+          shown.has(kid.address)
+            ? run("pane.focus", { terminal: kid.address })
+            : run("terminal.peek", { terminal: kid.address }),
+        )
+        .child(icon)
+        .child(
+          div()
+            .flex_1()
+            .min_w(0)
+            .truncate()
+            .text_size(12)
+            .text_color(state === "idle" ? t.muted : t.foreground)
+            .child(childName(kid)),
+        )
+        .when(Boolean(model), (el) =>
+          el.child(div().flex_none().text_size(10.5).text_color(t.dim).child(model)),
+        );
+    });
+
+    const right = `${kids.length} sub-agent${kids.length === 1 ? "" : "s"}`;
+    return this.section(t, "AGENTS", right, rows);
   }
 
   subagentsSection(t, agents) {

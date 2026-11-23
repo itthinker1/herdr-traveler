@@ -22,7 +22,7 @@
 - **右侧面板** `panel`,368px(280–900),**默认隐藏**。stack `panel-body` 四个页签:`Files`(`my-files`)、`Changes`、`Inbox`、`Claude`(`claude-status`)。
 - **状态栏** `status` 28px(`workspace-status`)。
 
-**Claude 面板**:聚焦 Claude Code 终端时,从上到下显示 **TASKS** / **SUBAGENTS** / **MCP** / **SESSION** 四块(标题为 accent 加粗,块间 1px 分割线);TASKS 与 SUBAGENTS 没有内容时整块隐藏,标题也不出现。聚焦 shell 或其它程序时显示一行灰字"暂无信息"。
+**Claude 面板**:聚焦 Claude Code 终端时,从上到下显示 **TASKS** / **AGENTS** / **SUBAGENTS** / **MCP** / **SESSION** 五块(标题为 accent 加粗,块间 1px 分割线);TASKS、AGENTS 与 SUBAGENTS 没有内容时整块隐藏,标题也不出现。聚焦 shell 或其它程序时显示一行灰字"暂无信息"。
 
 ## How it behaves
 
@@ -33,7 +33,7 @@
 - **快捷键**(`keys.json`,合并到你的 `layout:traveler` 段):
   - `cmd-shift-j` — 显示/隐藏右侧面板
   - `cmd-shift-u` — 切到 Claude 页签
-- **Claude 面板**:按聚焦终端的 `foreground.pid` 匹配桥文件 `~/.claude/herdr-bridge/claude-<pid>.json`,从上到下显示 tasks(working spinner、完成 ✓、阻塞 `!`)、subagents(运行中转圈、完成 ✓、失败 ✗、等待空心点;每行是描述或名字 + 类型标签 + 状态)、MCP(已连接绿点 + tools 数,未连接红点 "no tools")、SESSION(版本 / 模型 / Session / Folder / Branch)。TASKS 与 SUBAGENTS 没有内容时整块隐藏;无桥插件时降级显示版本 / session / tasks,SUBAGENTS 为空,MCP 显示"暂无连接状态"。
+- **Claude 面板**:按聚焦终端的 `foreground.pid` 匹配桥文件 `~/.claude/herdr-bridge/claude-<pid>.json`,从上到下显示 tasks(working spinner、完成 ✓ 且标题带删除线、阻塞 `!`;桥接会保留本轮已完成的任务,即使 Claude Code 删掉了任务文件)、agents(当前终端的 `hc run` 子终端:状态点/转圈、名字、模型;点击有 pane 的聚焦、没有的 peek)、subagents(运行中转圈、完成 ✓、失败 ✗、等待空心点;每行是描述或名字 + 类型标签 + 状态)、MCP(已连接绿点 + tools 数,未连接红点 "no tools")、SESSION(版本 / 模型 / Session / Folder / Branch)。模型名读 `data/traveler/sessions/<终端>.json`(与左侧 agent 卡片同一份状态栏缓存),所以两边都显示 "Opus 5" 而不是原始 ID;缓存缺失时回退桥接的模型 ID。TASKS、AGENTS 与 SUBAGENTS 没有内容时整块隐藏;无桥插件时降级显示版本 / session / tasks,SUBAGENTS 为空,MCP 显示"暂无连接状态"。
 - **侧栏**:窄于 160px 折叠成 rail;折叠按钮恢复之前宽度。
 
 ## Built from
@@ -70,7 +70,7 @@ row root
 - **traveler-tabs** — 顶部 tab 卡片与面板按钮;`assignJobs`/`tabNames` 来自 `lib.js`;`syncPanel` 按空间记忆右侧面板页签(布局含 `claude-status` 页签时跳过恢复);Claude 按钮 `panelButton("claude-status", "Claude", "icons/claude.svg")`。
 - **my-files** — 克隆自自带 `files`(0.1.13),Files 面板。
 - **inbox** — Inbox 面板;列出 `appHome()/data/inbox/files` 下白名单后缀(png/jpg/jpeg/webp/gif/mp4/mov/pdf)的文件,缩略图 + 大小 + 时间,点击用系统默认程序打开。`exec` 只跑 `ls`/`stat`/`open`(macOS)且参数走数组,不删档、不联网。
-- **claude-status** — 右侧 Claude 状态面板;`hc(["get", addr, "--json"])` 拿聚焦终端 pid,读 `~/.claude/herdr-bridge/claude-<pid>.json`(含 `tasks` 与 `agents`),fallback 读 `~/.claude/sessions/<pid>.json` 与 `~/.claude/tasks/<sessionId>/`;250ms 轮询 + `render` 事件驱动检测焦点,面板不可见时不加载不重绘。
+- **claude-status** — 右侧 Claude 状态面板;`hc(["get", addr, "--json"])` 拿聚焦终端 pid,读 `~/.claude/herdr-bridge/claude-<pid>.json`(含 `tasks` 与 `agents`),fallback 读 `~/.claude/sessions/<pid>.json` 与 `~/.claude/tasks/<sessionId>/`;模型名另读 `data/traveler/sessions/<address>.json`(远端用 `readTextFile(path, {on})`),与 `traveler-agents` 同一份缓存;`terminals()` 里 `parent` 等于当前终端且 `state === "live"` 的终端构成 AGENTS 区块;250ms 轮询 + `render` 事件驱动检测焦点,面板不可见时不加载不重绘。
 
 自带 mod 依赖:`changes`、`pane`(pane 头)、`workspace-status`、`menu`、`new-menu`、`picker`、`machine-add`,以及 `workspace-chrome` 的图标(`branch.svg`、`server.svg`、`monitor.svg`、`plus.svg`、`chevron-*.svg`、`spinner.svg`)和 `icons/claude.svg`。
 
@@ -105,6 +105,6 @@ Claude 侧依赖:**`skills/herdr-bridge`**(Claude Code 插件,放进 `~/.claude/
 2. 切换布局到 `traveler`:左侧栏(品牌 + Spaces + Agents + footer)、顶部 tab 栏、终端主区、状态栏出现;右侧面板隐藏。
 3. 右上角依次是 `Files / Changes / Inbox / Claude` 四个按钮;点 `Claude` 展开面板并停在 Claude 页签,点其它页签不报错。
 4. `cmd-shift-j` 显示/隐藏面板,`cmd-shift-u` 切回 Claude 页签。
-5. 聚焦一个 Claude Code 终端:Claude 面板从上到下为 TASKS / SUBAGENTS / MCP / SESSION;没有任务或子代理时对应整块(含标题)不出现;派发一个子代理时 SUBAGENTS 出现一行,带描述、类型与状态。聚焦 shell 或其它程序:显示"暂无信息"。
+5. 聚焦一个 Claude Code 终端:Claude 面板从上到下为 TASKS / AGENTS / SUBAGENTS / MCP / SESSION;没有任务、子终端或子代理时对应整块(含标题)不出现;派发一个子代理时 SUBAGENTS 出现一行,带描述、类型与状态;用 `hc run` 起一个子终端时 AGENTS 出现一行,名字旁显示它的模型(状态栏缓存存在时)。SESSION 的 Model 与左侧 agent 卡片显示同一个友好名称。聚焦 shell 或其它程序:显示"暂无信息"。
 6. `claude plugin validate ~/.claude/skills/herdr-bridge` 通过;`~/.claude/herdr-bridge/` 下有 `claude-<pid>.json`,且包含 `tasks` 与 `agents` 字段。
 7. Spaces 列表显示地点头像与 git 尾巴;Agents 列表显示职业肖像卡片;两者点击/切换正常。

@@ -94,6 +94,26 @@ export function parseTaskEntries(entries) {
   return { items, counts };
 }
 
+// Claude Code deletes a task's file once it is completed, so the disk list
+// loses finished work. Keep every completed task that was published before and
+// is gone now; a task that vanished while still pending or in progress was
+// deleted on purpose, so let it go.
+export function mergeTaskLists(previous, current) {
+  const items = new Map();
+  for (const item of previous?.items ?? []) {
+    if (item && typeof item.id === "string" && item.status === "completed") {
+      items.set(item.id, item);
+    }
+  }
+  for (const item of current?.items ?? []) {
+    if (item && typeof item.id === "string") items.set(item.id, item);
+  }
+  const merged = [...items.values()].sort((a, b) => Number(a.id) - Number(b.id));
+  const counts = { pending: 0, in_progress: 0, completed: 0, total: merged.length };
+  for (const item of merged) counts[item.status] += 1;
+  return { items: merged, counts };
+}
+
 // Old TodoWrite calls carry the whole list in the tool input. Convert them to
 // the same shape as task files so the panel renders both alike.
 export function todosToTasks(todos) {

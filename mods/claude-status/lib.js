@@ -115,3 +115,64 @@ export function agentState(agent) {
   if (status === "failed" || status === "killed") return "failed";
   return "waiting";
 }
+
+// The traveler statusline cache, shared with the left-hand agent cards. Both
+// panels read it so they show the same model name instead of the bridge's raw
+// model id ("Opus 5" rather than "claude-opus-5[1M]").
+const SESSIONS_DIR = "data/traveler/sessions";
+const LOCAL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const MACHINE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+// A local terminal's cache file; remote addresses have no local file.
+export function modelCachePath(appHomeDir, address) {
+  if (typeof appHomeDir !== "string") return null;
+  const base = appHomeDir.replace(/\/+$/, "");
+  if (base === "") return null;
+  if (typeof address !== "string" || !LOCAL_ID.test(address)) return null;
+  return `${base}/${SESSIONS_DIR}/${address}.json`;
+}
+
+// A remote terminal's cache lives in that machine's own app home; read it over
+// the connection Herdr already has.
+export function remoteModelCachePath(address) {
+  if (typeof address !== "string") return null;
+  const parts = address.split("/");
+  if (parts.length !== 2 || !MACHINE.test(parts[0]) || !LOCAL_ID.test(parts[1])) return null;
+  return { on: parts[0], path: `.config/herdr-app/${SESSIONS_DIR}/${parts[1]}.json` };
+}
+
+// Only the fields the panel shows. A missing or malformed file is "no data".
+export function parseModelCache(text) {
+  if (typeof text !== "string" || text.trim() === "") return null;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const model = typeof data.model === "string" && data.model !== "" ? data.model : null;
+  const effort = typeof data.effort === "string" && data.effort !== "" ? data.effort : null;
+  const updatedAt = Number.isFinite(data.updatedAt) ? data.updatedAt : null;
+  if (model === null && effort === null) return null;
+  return { model, effort, updatedAt };
+}
+
+// A sub-agent terminal's status: its own report when it has one, else the
+// core's word. A sub-agent never shows "done" — it reports to its parent.
+export function childStatus(agent, terminal) {
+  const status = agent?.status ?? terminal?.status ?? null;
+  if (status === "error") return "blocked";
+  if (status === "done") return "idle";
+  return status;
+}
+
+// The name a sub-agent terminal is known by: what it was named, then its
+// template, program or address.
+export function childName(terminal) {
+  if (!terminal || typeof terminal !== "object") return "";
+  for (const value of [terminal.name, terminal.template, terminal.program?.name, terminal.address]) {
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return "";
+}
